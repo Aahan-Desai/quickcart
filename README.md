@@ -235,6 +235,3 @@ Potential extensions include:
 * Background workers for asynchronous order processing.
 * Structured logging and expanded integration testing.
 
-## License
-
-Add a license if you intend to distribute the project for reuse. Otherwise, remove this section until a license has been selected.
