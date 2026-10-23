@@ -1,136 +1,240 @@
 # QuickCart
 
-QuickCart is a small Go REST API for learning the backend fundamentals behind an e-commerce catalogue and order flow. It deliberately uses only the Go standard library and stores all data in memory, so the important ideas are visible without setup overhead.
+A lightweight e-commerce REST API built with Go, focusing on backend development, inventory management, concurrency safety, and reliable order processing.
 
-## Implemented features
+## Overview
 
-- `net/http` server and Go 1.22 method/path routing.
-- JSON request and response handling with consistent JSON errors.
-- Seeded product catalogue, product listing, and product lookup.
-- Server-calculated order totals: clients submit product IDs and quantities only.
-- Whole-order validation before inventory changes.
-- A `sync.RWMutex` protecting the shared maps and an exclusive lock around order creation.
-- A 1 MiB JSON request-body limit, malformed JSON handling, and automatic `405 Method Not Allowed` responses from `http.ServeMux`.
-- Graceful shutdown on Ctrl+C / `SIGTERM`.
-- Standard-library HTTP tests, including a concurrent final-stock scenario.
+QuickCart is a Go-based backend application that provides RESTful endpoints for product discovery, order creation, inventory validation, and order retrieval. It uses Go's standard library to implement HTTP routing, JSON handling, concurrent access control, and automated testing.
 
-Money values are integer minor units (for example, `350` can represent 350 paise) to avoid floating-point rounding in this learning project.
+The project demonstrates core backend engineering principles through a minimal e-commerce workflow, with particular emphasis on data consistency, input validation, and thread-safe order processing.
 
-## Requirements
+## Features
 
-Install Go **1.22 or later**. The standard-library route patterns such as `GET /products/{id}` require Go 1.22.
+* **RESTful API:** HTTP endpoints for health checks, product discovery, and order management.
+* **Product Catalogue:** List available products and retrieve individual product details.
+* **Order Management:** Create orders and retrieve order information.
+* **Inventory Validation:** Verify stock availability before processing orders.
+* **Atomic Order Processing:** Validate the complete order before modifying inventory to prevent partial stock updates.
+* **Concurrency Safety:** Use `sync.RWMutex` to protect shared state during concurrent operations.
+* **Server-Side Pricing:** Calculate order totals using catalogue prices rather than client-supplied values.
+* **Request Validation:** Handle malformed JSON, reject unknown fields, and enforce request-body size limits.
+* **Graceful Shutdown:** Handle termination signals to shut down the HTTP server cleanly.
+* **Automated Testing:** Test HTTP behaviour, order validation, and concurrent inventory operations.
 
-Confirm your installation:
+## Technology Stack
 
-```powershell
-go version
+| Technology      | Purpose                                |
+| --------------- | -------------------------------------- |
+| Go              | Backend application development        |
+| `net/http`      | HTTP server and request routing        |
+| `encoding/json` | JSON serialization and deserialization |
+| `sync.RWMutex`  | Thread-safe access to shared state     |
+| Go Testing      | Unit and HTTP handler testing          |
+
+## Project Structure
+
+```text
+QuickCart/
+├── cmd/
+│   └── quickcart/
+│       └── main.go
+├── internal/
+│   └── ...
+├── go.mod
+└── README.md
 ```
 
-## Run
+The application entry point is located in `cmd/quickcart/`. Internal packages are organised under `internal/`, where applicable.
 
-From this directory:
+## Getting Started
 
-```powershell
+### Prerequisites
+
+* Go 1.22 or later
+
+### Installation
+
+Clone the repository and navigate to the project directory:
+
+```bash
+git clone <your-repository-url>
+cd QuickCart
+```
+
+### Run the Application
+
+Start the API server:
+
+```bash
 go run ./cmd/quickcart
 ```
 
-The server listens at `http://localhost:8080`. Press Ctrl+C to shut it down gracefully.
+The server listens on `http://localhost:8080`.
 
-## Test
+Press `Ctrl+C` to shut down the server.
 
-```powershell
+## API Reference
+
+| Method | Endpoint         | Description                    |
+| ------ | ---------------- | ------------------------------ |
+| `GET`  | `/health`        | Check server health            |
+| `GET`  | `/products`      | Retrieve the product catalogue |
+| `GET`  | `/products/{id}` | Retrieve a product by ID       |
+| `POST` | `/orders`        | Validate and create an order   |
+| `GET`  | `/orders/{id}`   | Retrieve an order by ID        |
+
+### Health Check
+
+**Request**
+
+```http
+GET /health
+```
+
+**Response — `200 OK`**
+
+```json
+{
+  "status": "ok"
+}
+```
+
+### List Products
+
+**Request**
+
+```http
+GET /products
+```
+
+**Example Response**
+
+```json
+[
+  {
+    "id": "p-apple",
+    "name": "Apples (1 kg)",
+    "price": 350,
+    "available_stock": 20
+  }
+]
+```
+
+### Create an Order
+
+**Request**
+
+```http
+POST /orders
+Content-Type: application/json
+```
+
+**Request Body**
+
+```json
+{
+  "items": [
+    {
+      "product_id": "p-apple",
+      "quantity": 2
+    }
+  ]
+}
+```
+
+**Example Response — `201 Created`**
+
+```json
+{
+  "id": "o-1",
+  "items": [
+    {
+      "product_id": "p-apple",
+      "name": "Apples (1 kg)",
+      "quantity": 2,
+      "unit_price": 350
+    }
+  ],
+  "total": 700,
+  "created_at": "2026-10-23T00:00:00Z"
+}
+```
+
+The server retrieves prices from the product catalogue, calculates the total, validates inventory, and records the order. Product prices and order totals are not accepted from the client.
+
+### Retrieve an Order
+
+**Request**
+
+```http
+GET /orders/o-1
+```
+
+Returns the order details when the specified order exists.
+
+### Error Responses
+
+Errors are returned as JSON with an explanatory message.
+
+**Example**
+
+```json
+{
+  "error": "insufficient stock for product \"p-apple\""
+}
+```
+
+Invalid requests, unknown products, and insufficient inventory are rejected without partially updating stock.
+
+## Order Processing and Concurrency
+
+QuickCart uses Go's `sync.RWMutex` to protect shared product and order data.
+
+Order creation follows these steps:
+
+1. Validate the requested products and quantities.
+2. Combine duplicate product entries where applicable.
+3. Verify that sufficient inventory is available for every item.
+4. Calculate the order total using catalogue prices.
+5. Update inventory and save the order.
+
+Inventory changes occur only after the complete order has passed validation. An exclusive lock prevents concurrent order requests from validating and modifying the same inventory against conflicting stock values.
+
+A concurrency test simulates two orders competing for the final available unit and verifies that only one succeeds.
+
+## Monetary Representation
+
+Product prices and order totals use integer minor units instead of floating-point values.
+
+For example, `350` represents ₹3.50 when prices are denominated in paise. This approach avoids floating-point rounding errors in monetary calculations.
+
+## Testing
+
+Run the test suite:
+
+```bash
 go test ./...
 ```
 
-For additional data-race detection during learning:
+Run the tests with race detection where supported:
 
-```powershell
+```bash
 go test -race ./...
 ```
 
-## Verification status
+The test suite includes HTTP behaviour, request validation, order processing, and concurrent inventory access.
 
-Formatted with Go 1.27.3 and verified with `go test ./...` on Windows. The
-live server also started and listened on port 8080. This managed workspace
-blocks local HTTP connections, so endpoint requests must be tried in a normal
-local terminal. `go test -race ./...` could not run here because CGO is
-unavailable, which the Windows race detector requires.
+## Future Enhancements
 
-## API
+Potential extensions include:
 
-| Method | Path | Success |
-| --- | --- | --- |
-| GET | `/health` | `200 OK` |
-| GET | `/products` | `200 OK` |
-| GET | `/products/{id}` | `200 OK` or `404 Not Found` |
-| POST | `/orders` | `201 Created` or `400 Bad Request` |
-| GET | `/orders/{id}` | `200 OK` or `404 Not Found` |
+* PostgreSQL integration for persistent storage.
+* Authentication and authorisation.
+* Idempotency keys for duplicate order prevention.
+* Pagination for product listings.
+* Background workers for asynchronous order processing.
+* Structured logging and expanded integration testing.
 
-### Health
+## License
 
-```powershell
-curl http://localhost:8080/health
-```
-
-```json
-{"status":"ok"}
-```
-
-### List products
-
-```powershell
-curl http://localhost:8080/products
-```
-
-Example response:
-
-```json
-[{"id":"p-apple","name":"Apples (1 kg)","price":350,"available_stock":20}]
-```
-
-### Create an order
-
-```powershell
-curl -X POST http://localhost:8080/orders -H "Content-Type: application/json" -d '{"items":[{"product_id":"p-apple","quantity":2}]}'
-```
-
-Example response:
-
-```json
-{"id":"o-1","items":[{"product_id":"p-apple","name":"Apples (1 kg)","quantity":2,"unit_price":350}],"total":700,"created_at":"2026-10-23T00:00:00Z"}
-```
-
-Price and total are intentionally absent from the request. The server finds the product price, calculates the total, and records that price on the order. Unknown JSON fields are rejected.
-
-### Read an order
-
-```powershell
-curl http://localhost:8080/orders/o-1
-```
-
-### Error shape
-
-Invalid input, unknown products, or insufficient stock return `400` with a safe message:
-
-```json
-{"error":"insufficient stock for product \"p-apple\""}
-```
-
-## How the mutex makes ordering atomic
-
-The store uses `RLock` for reads. `CreateOrder` takes the write lock for the short critical section that:
-
-1. validates every item and combines duplicate product lines;
-2. checks stock for the whole request;
-3. decrements stock and saves the new order.
-
-No inventory is changed during validation. If any line fails, the method returns before the decrement loop, so a multi-item order cannot leave partial stock changes. While one order holds the write lock, another order cannot validate against the same old stock level. The concurrency test starts two orders together for a single remaining unit and asserts that exactly one gets `201 Created`.
-
-## Current limitations
-
-- Data is lost when the process stops; there is no database or persistence.
-- There is no authentication, payment processing, idempotency key, pagination, product administration, or reservation expiry.
-- IDs are in-process counters, not globally distributed IDs.
-- Error messages are suitable for this learning API, not a complete production error taxonomy.
-
-These are intentional omissions for a small, explainable first version.
+Add a license if you intend to distribute the project for reuse. Otherwise, remove this section until a license has been selected.
